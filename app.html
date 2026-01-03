@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>災害手続きコンシェルジュ</title>
+    <style>
+        /* --- ベーススタイル --- */
+        :root {
+            --primary-color: #3182ce;
+            --bg-color: #f7fafc;
+            --text-color: #2d3748;
+            --card-bg: #ffffff;
+            --yes-color: #48bb78;
+            --no-color: #f56565;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: var(--bg-color);
+            margin: 0;
+            height: 100vh;
+            overflow: hidden; /* スクロール禁止（アプリっぽく） */
+            color: var(--text-color);
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* --- 画面遷移管理 --- */
+        .screen {
+            display: none;
+            flex-direction: column;
+            height: 100%;
+            width: 100%;
+            box-sizing: border-box;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .screen.active {
+            display: flex;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            text-align: center;
+            margin-bottom: 10px;
+            color: var(--text-color);
+        }
+
+        p.desc {
+            font-size: 0.9rem;
+            color: #718096;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        /* --- Step 1: 個人情報入力フォーム --- */
+        .form-group {
+            margin-bottom: 20px;
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 8px;
+            font-size: 0.95rem;
+        }
+
+        select, input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            font-size: 1rem;
+            border: 1px solid #cbd5e0;
+            border-radius: 5px;
+            background: #fff;
+            box-sizing: border-box; /* はみ出し防止 */
+        }
+
+        .start-btn {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 15px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            border-radius: 30px;
+            cursor: pointer;
+            width: 100%;
+            margin-top: auto; /* 下部に配置 */
+            box-shadow: 0 4px 6px rgba(50, 130, 200, 0.3);
+            transition: transform 0.1s;
+        }
+
+        .start-btn:active {
+            transform: scale(0.98);
+        }
+
+        /* --- Loading Animation --- */
+        #loading-screen {
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #e2e8f0;
+            border-top: 4px solid var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* --- Step 2: カードスタック --- */
+        .card-container {
+            position: relative;
+            flex-grow: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 20px 0;
+            width: 100%;
+        }
+
+        .card {
+            position: absolute;
+            width: 90vw; /* スマホ幅の90% */
+            max-width: 340px;
+            height: 60vh; /* 高さの60% */
+            max-height: 500px;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            box-sizing: border-box;
+            cursor: grab;
+            user-select: none;
+            touch-action: none; /* スワイプ時のスクロール防止 */
+            transform-origin: 50% 100%;
+        }
+
+        .card-icon { font-size: 4rem; margin-bottom: 20px; }
+        .card-title { font-size: 1.4rem; font-weight: bold; text-align: center; margin-bottom: 10px; line-height: 1.3; }
+        .card-desc { font-size: 0.95rem; text-align: center; color: #718096; line-height: 1.6; }
+        .card-tag { 
+            position: absolute; bottom: 20px;
+            background: #edf2f7; padding: 5px 12px; border-radius: 15px; font-size: 0.8rem; color: #4a5568; 
+        }
+
+        /* スタンプ */
+        .stamp {
+            position: absolute; top: 30px; padding: 5px 10px;
+            border: 3px solid; border-radius: 8px; font-size: 1.8rem; font-weight: 900;
+            opacity: 0; pointer-events: none;
+        }
+        .stamp-nope { right: 30px; color: var(--no-color); border-color: var(--no-color); transform: rotate(15deg); }
+        .stamp-like { left: 30px; color: var(--yes-color); border-color: var(--yes-color); transform: rotate(-15deg); }
+
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            padding-bottom: 20px;
+        }
+        .ctrl-btn {
+            width: 65px; height: 65px; border-radius: 50%; border: none; font-size: 1.8rem;
+            cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+            display: flex; justify-content: center; align-items: center;
+            transition: transform 0.1s;
+        }
+        .ctrl-btn:active { transform: scale(0.9); }
+        .btn-no { background: white; color: var(--no-color); }
+        .btn-yes { background: var(--yes-color); color: white; }
+
+        /* --- Step 3: 結果リスト --- */
+        .result-list { flex-grow: 1; overflow-y: auto; padding-bottom: 20px; }
+        .todo-item {
+            background: white; border-left: 6px solid var(--yes-color);
+            padding: 15px; margin-bottom: 15px; border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+        .todo-title { font-weight: bold; font-size: 1.1rem; margin-bottom: 5px; }
+        .todo-details { font-size: 0.9rem; color: #4a5568; }
+        .todo-tag { display: inline-block; font-size: 0.75rem; background: #e2e8f0; padding: 2px 8px; border-radius: 4px; margin-top: 5px; }
+
+    </style>
+</head>
+<body>
+
+    <div id="screen-onboarding" class="screen active">
+        <header>
+            <h1>状況を教えてください</h1>
+            <p class="desc">30秒でAIがあなたに必要な<br>手続きだけを選び出します。</p>
+        </header>
+        
+        <form id="profile-form">
+            <div class="form-group">
+                <label>🏠 住まいの被害状況</label>
+                <select id="input-house-status">
+                    <option value="none">被害なし・軽微</option>
+                    <option value="damage">一部損壊〜全壊</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>🔑 住まいの権利</label>
+                <select id="input-house-type">
+                    <option value="rent">賃貸（アパート・借家）</option>
+                    <option value="own">持ち家</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>💼 現在のお仕事</label>
+                <select id="input-job">
+                    <option value="employee">会社員・公務員</option>
+                    <option value="self">自営業・フリーランス</option>
+                    <option value="none">無職・学生</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>🚗 車の被害</label>
+                <select id="input-car">
+                    <option value="no">なし（車を持っていない/無事）</option>
+                    <option value="yes">あり（水没・損壊など）</option>
+                </select>
+            </div>
+        </form>
+
+        <button class="start-btn" onclick="processAI()">チェックを開始する</button>
+    </div>
+
+    <div id="loading-screen" class="screen">
+        <div class="spinner"></div>
+        <p>AIが最適な手続きを検索中...</p>
+    </div>
+
+    <div id="screen-swiping" class="screen">
+        <header style="margin-top: 10px;">
+            <h1>手続き仕分け</h1>
+            <p class="desc">直感で選んでください</p>
+        </header>
+
+        <div class="card-container" id="cardContainer">
+            </div>
+
+        <div class="controls">
+            <button class="ctrl-btn btn-no" onclick="manualSwipe('left')">✕</button>
+            <button class="ctrl-btn btn-yes" onclick="manualSwipe('right')">✓</button>
+        </div>
+    </div>
+
+    <div id="screen-result" class="screen">
+        <header>
+            <h1>あなたのToDoリスト</h1>
+            <p class="desc">優先度の高い順に表示しています</p>
+        </header>
+
+        <div class="result-list" id="todo-list">
+            </div>
+
+        <button class="start-btn" onclick="location.reload()" style="background-color: #718096;">最初からやり直す</button>
+    </div>
+
+<script>
+    // --- データベース（災害手続きの全量データ） ---
+    // condition関数で、そのカードを表示するかどうかを制御します
+    const allDatabase = [
+        {
+            id: 'risai',
+            title: "り災証明書",
+            desc: "全ての支援の基礎となる書類です。家の被害写真を撮ってから申請してください。",
+            icon: "📄",
+            tag: "行政 / 最優先",
+            action: "市町村窓口で申請",
+            condition: (p) => p.houseStatus === 'damage'
+        },
+        {
+            id: 'hoken',
+            title: "火災・地震保険の請求",
+            desc: "家の被害状況を保険会社に連絡します。片付ける前に写真を撮ることが重要です。",
+            icon: "🏠",
+            tag: "民間 / お金",
+            action: "保険会社へ電話/WEB",
+            condition: (p) => p.houseStatus === 'damage'
+        },
+        {
+            id: 'oukyu',
+            title: "住宅の応急修理制度",
+            desc: "屋根や壁など、住むために最低限必要な修理費用を行政が補助する制度です。",
+            icon: "🔨",
+            tag: "行政 / 住まい",
+            action: "市町村窓口へ相談（修理依頼前）",
+            condition: (p) => p.houseStatus === 'damage' && p.houseType === 'own'
+        },
+        {
+            id: 'shienkin',
+            title: "被災者生活再建支援金",
+            desc: "住宅が全壊等の場合、最大300万円が支給されます。",
+            icon: "💴",
+            tag: "行政 / 支援金",
+            action: "り災証明書取得後に申請",
+            condition: (p) => p.houseStatus === 'damage'
+        },
+        {
+            id: 'car_tax',
+            title: "自動車重量税の還付",
+            desc: "被災して廃車にした場合、車検の残り期間分の税金が戻ってきます。",
+            icon: "🚗",
+            tag: "税金 / 車",
+            action: "陸運支局等で手続き",
+            condition: (p) => p.car === 'yes'
+        },
+        {
+            id: 'koyou',
+            title: "失業手当の特例受給",
+            desc: "災害により事業所が休業し、一時的に働けない場合も受給できる可能性があります。",
+            icon: "👷",
+            tag: "ハローワーク / 仕事",
+            action: "ハローワークへ相談",
+            condition: (p) => p.job === 'employee'
+        },
+        {
+            id: 'kouko',
+            title: "災害貸付（公庫など）",
+            desc: "事業再建のための低金利融資制度です。",
+            icon: "📉",
+            tag: "金融 / 事業",
+            action: "日本政策金融公庫へ相談",
+            condition: (p) => p.job === 'self'
+        },
+        {
+            id: 'tax_red',
+            title: "税金・保険料の減免",
+            desc: "住民税や国民健康保険料などが減免される場合があります。",
+            icon: "👛",
+            tag: "行政 / お金",
+            action: "市町村窓口へ相談",
+            condition: (p) => true // 全員対象
+        },
+        {
+            id: 'nhk',
+            title: "NHK受信料の免除",
+            desc: "災害救助法が適用された地域で、住居に被害があった場合に免除されます。",
+            icon: "📺",
+            tag: "生活",
+            action: "NHKへ連絡",
+            condition: (p) => p.houseStatus === 'damage'
+        }
+    ];
+
+    let currentStack = []; // フィルタリング後のカードリスト
+    let myTodoList = [];   // ユーザーが「必要（YES）」したリスト
+
+    // --- 画面遷移関数 ---
+    function switchScreen(id) {
+        document.querySelectorAll('.screen').forEach(el => el.classList.remove('active'));
+        document.getElementById(id).classList.add('active');
+    }
+
+    // --- Step 1: AI処理（フィルタリング） ---
+    function processAI() {
+        // 1. ユーザー入力の取得
+        const profile = {
+            houseStatus: document.getElementById('input-house-status').value,
+            houseType: document.getElementById('input-house-type').value,
+            job: document.getElementById('input-job').value,
+            car: document.getElementById('input-car').value
+        };
+
+        // 2. ローディング表示
+        switchScreen('loading-screen');
+
+        // 3. AI思考時間の演出 (1.5秒待機)
+        setTimeout(() => {
+            // フィルタリング実行
+            currentStack = allDatabase.filter(card => card.condition(profile));
+            
+            // カード生成
+            initCards(currentStack);
+            
+            // 画面切り替え
+            switchScreen('screen-swiping');
+        }, 1500);
+    }
+
+    // --- Step 2: カードUIの生成と操作 ---
+    const container = document.getElementById('cardContainer');
+
+    function initCards(cards) {
+        container.innerHTML = ''; // クリア
+        
+        if (cards.length === 0) {
+            container.innerHTML = '<div style="text-align:center">該当する手続きが見つかりませんでした。<br>市町村の総合窓口へご相談ください。</div>';
+            return;
+        }
+
+        cards.forEach((data, index) => {
+            const card = document.createElement('div');
+            card.classList.add('card');
+            // Z-index: 最後が一番上に来るように（表示順序の調整）
+            card.style.zIndex = cards.length - index;
+            
+            // データ埋め込み（ID特定用）
+            card.dataset.id = data.id;
+
+            card.innerHTML = `
+                <div class="stamp stamp-like">必要</div>
+                <div class="stamp stamp-nope">不要</div>
+                <div class="card-icon">${data.icon}</div>
+                <div class="card-title">${data.title}</div>
+                <div class="card-desc">${data.desc}</div>
+                <div class="card-tag">${data.tag}</div>
+            `;
+            
+            container.appendChild(card);
+            addSwipeLogic(card, data);
+        });
+    }
+
+    // --- スワイプ制御 (Touch & Mouse) ---
+    function addSwipeLogic(card, data) {
+        let isDragging = false;
+        let startX = 0;
+        let currentX = 0;
+
+        const start = (x) => {
+            isDragging = true;
+            startX = x;
+            card.style.transition = 'none';
+        };
+
+        const move = (x) => {
+            if (!isDragging) return;
+            currentX = x - startX;
+            const rotate = currentX * 0.05; // 回転係数
+            
+            card.style.transform = `translateX(${currentX}px) rotate(${rotate}deg)`;
+
+            // スタンプの透明度制御
+            const like = card.querySelector('.stamp-like');
+            const nope = card.querySelector('.stamp-nope');
+            
+            if (currentX > 0) {
+                like.style.opacity = Math.min(currentX / 100, 1);
+                nope.style.opacity = 0;
+            } else {
+                nope.style.opacity = Math.min(Math.abs(currentX) / 100, 1);
+                like.style.opacity = 0;
+            }
+        };
+
+        const end = () => {
+            if (!isDragging) return;
+            isDragging = false;
+            const threshold = 100; // しきい値
+
+            if (currentX > threshold) {
+                swipeOut(card, 'right', data);
+            } else if (currentX < -threshold) {
+                swipeOut(card, 'left', data);
+            } else {
+                // 元に戻す
+                card.style.transition = 'transform 0.3s ease-out';
+                card.style.transform = `translateX(0px) rotate(0deg)`;
+                card.querySelector('.stamp-like').style.opacity = 0;
+                card.querySelector('.stamp-nope').style.opacity = 0;
+            }
+            currentX = 0;
+        };
+
+        // Mouse Events
+        card.addEventListener('mousedown', e => start(e.clientX));
+        document.addEventListener('mousemove', e => move(e.clientX));
+        document.addEventListener('mouseup', end);
+
+        // Touch Events
+        card.addEventListener('touchstart', e => start(e.touches[0].clientX));
+        document.addEventListener('touchmove', e => move(e.touches[0].clientX));
+        document.addEventListener('touchend', end);
+    }
+
+    function swipeOut(card, direction, data) {
+        const moveX = direction === 'right' ? 1000 : -1000;
+        const rotate = direction === 'right' ? 30 : -30;
+        
+        card.style.transition = 'transform 0.5s ease-out';
+        card.style.transform = `translateX(${moveX}px) rotate(${rotate}deg)`;
+
+        // ロジック処理
+        if (direction === 'right') {
+            myTodoList.push(data);
+        }
+
+        // カード除去と終了判定
+        setTimeout(() => {
+            card.remove(); // DOMから削除
+            checkFinish();
+        }, 300);
+    }
+
+    // ボタン操作用
+    window.manualSwipe = (direction) => {
+        const cards = document.querySelectorAll('.card');
+        if (cards.length === 0) return;
+
+        // z-indexが一番高い（＝手前にある）カードを探す
+        // 今回の生成ロジックではDOMの先頭が一番上とは限らないのでソートする
+        const topCard = Array.from(cards).reduce((prev, current) => {
+            return (Number(prev.style.zIndex) > Number(current.style.zIndex)) ? prev : current;
+        });
+
+        const id = topCard.dataset.id;
+        const data = currentStack.find(d => d.id === id);
+
+        swipeOut(topCard, direction, data);
+    };
+
+    function checkFinish() {
+        const remaining = document.querySelectorAll('.card');
+        if (remaining.length === 0) {
+            renderResult();
+            switchScreen('screen-result');
+        }
+    }
+
+    // --- Step 3: 結果表示 ---
+    function renderResult() {
+        const listEl = document.getElementById('todo-list');
+        listEl.innerHTML = '';
+
+        if (myTodoList.length === 0) {
+            listEl.innerHTML = '<div style="text-align:center; padding:20px;">必要な手続きはありませんでした。<br>ゆっくりお休みください。</div>';
+            return;
+        }
+
+        myTodoList.forEach(item => {
+            const div = document.createElement('div');
+            div.classList.add('todo-item');
+            div.innerHTML = `
+                <div class="todo-title">✅ ${item.title}</div>
+                <div class="todo-details">${item.desc}</div>
+                <div style="margin-top:8px; font-weight:bold; color:#2b6cb0;">Next: ${item.action}</div>
+                <div class="todo-tag">${item.tag}</div>
+            `;
+            listEl.appendChild(div);
+        });
+    }
+
+</script>
+</body>
+</html>
